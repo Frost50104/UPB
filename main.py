@@ -4,9 +4,6 @@ import config  # Файл с переменными
 import help_message
 
 from telebot import types
-from io import StringIO
-from datetime import datetime
-import requests
 
 
 # Создание бота
@@ -18,6 +15,31 @@ def handle_command_start(message: types.Message):
         chat_id=message.chat.id,
         text='Привет! Я бот для постановки задач',
     )
+
+@bot.message_handler(commands=['help'])
+def handle_command_help(message: types.Message):
+    bot.send_message(
+        chat_id=message.chat.id,
+        text=help_message.help_msg,
+        parse_mode='HTML'
+    )
+
+@bot.message_handler(commands=['my_id'])
+def handle_command_my_id(message: types.Message):
+    bot.send_message(
+        chat_id=message.chat.id,
+        text=f'ID пользователя <b>{message.from_user.first_name}</b> ({message.from_user.username}):\n <pre>{message.from_user.id}</pre>',
+        parse_mode='HTML',
+    )
+
+@bot.message_handler(commands=['chat_id'])
+def handle_command_chat_id(message: types.Message):
+    bot.send_message(
+        chat_id=message.chat.id,
+        text=f'ID чата:\n <pre>{message.chat.id}</pre>',
+        parse_mode='HTML',
+    )
+
 
 # --- Функция для экранирования MarkdownV2 ---
 def escape_markdown_v2(text):
