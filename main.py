@@ -25,9 +25,6 @@ def escape_markdown_v2(text):
     special_chars = r"\_*[]()~`>#+-=|{}.!"
     return "".join(f"\\{char}" if char in special_chars else char for char in text)
 
-# Создание бота
-bot = telebot.TeleBot(config.TOKEN)
-
 # Хранение данных о задачах и фото
 task_data = {}
 
