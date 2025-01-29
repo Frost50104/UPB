@@ -91,13 +91,3 @@ def request_new_photo(user_id):
 if __name__ == "__main__":
     print("Бот запущен!")
     bot.polling(none_stop=True)
-
-
-
-
-
-
-
-if __name__ == "__main__":
-    print("Бот запущен!")
-    bot.polling(none_stop=True)
