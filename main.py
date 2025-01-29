@@ -19,24 +19,33 @@ def handle_command_start(message: types.Message):
         text='Привет! Я бот для постановки задач',
     )
 
-# Хранение задач (чтобы знать, чье фото чей)
+# --- Функция для экранирования MarkdownV2 ---
+def escape_markdown_v2(text):
+    """Экранирует специальные символы для MarkdownV2"""
+    special_chars = r"\_*[]()~`>#+-=|{}.!"
+    return "".join(f"\\{char}" if char in special_chars else char for char in text)
+
+# Создание бота
+bot = telebot.TeleBot(config.TOKEN)
+
+# Хранение данных о задачах и фото
 task_data = {}
 
 # --- 1. Команда /new_task (только для админа) ---
 @bot.message_handler(commands=['new_task'])
 def new_task(message):
     if message.from_user.id != config.ADMIN_ID:
-        bot.send_message(message.chat.id, "У вас нет прав ставить задачи.")
+        bot.send_message(message.chat.id, "⛔ У вас нет прав ставить задачи.")
         return
 
-    bot.send_message(message.chat.id, "Введите текст задачи:")
+    bot.send_message(message.chat.id, "✏ Введите текст задачи:")
     bot.register_next_step_handler(message, send_task_to_performers)
 
 def send_task_to_performers(message):
     task_text = message.text
     for performer in config.performers_list:
         bot.send_message(performer, f"📌 *Новое задание:*\n{task_text}", parse_mode="Markdown")
-        bot.send_message(performer, "Отправьте фото выполнения.")
+        bot.send_message(performer, "📷 Отправьте фото выполнения.")
         task_data[performer] = {"task_text": task_text}  # Сохраняем задачу для исполнителя
 
 # --- 2. Получение фото от исполнителя ---
@@ -45,35 +54,57 @@ def receive_photo(message):
     user_id = message.from_user.id
 
     if user_id not in config.performers_list:
-        bot.send_message(message.chat.id, "Вы не исполнитель.")
+        bot.send_message(message.chat.id, "⛔ Вы не исполнитель.")
         return
 
     photo = message.photo[-1].file_id  # Берем фото лучшего качества
     task_text = task_data.get(user_id, {}).get("task_text", "Задача без описания")
 
-    # Создаем кнопки для админа
+    # Экранируем Markdown вручную
+    safe_task_text = escape_markdown_v2(task_text)
+
+    # Проверяем, есть ли у пользователя username и экранируем его
+    username = message.from_user.username or f"ID: {user_id}"
+    safe_username = escape_markdown_v2(username)
+
+    # Создаем Inline-кнопки для админа
     keyboard = InlineKeyboardMarkup()
     keyboard.add(
-        InlineKeyboardButton("✔ Принять", callback_data=f"accept_{user_id}"),
-        InlineKeyboardButton("❌ Отклонить", callback_data=f"reject_{user_id}")
+        InlineKeyboardButton("✔ Принять", callback_data=f"accept_{message.message_id}_{user_id}"),
+        InlineKeyboardButton("❌ Отклонить", callback_data=f"reject_{message.message_id}_{user_id}")
     )
 
     # Отправляем фото в контрольный чат
-    bot.send_photo(config.control_chat_id, photo, caption=f"📝 *Задача:* {task_text}", parse_mode="Markdown", reply_markup=keyboard)
+    sent_message = bot.send_photo(config.control_chat_id, photo,
+                                  caption=f"📝 *Задача:* {safe_task_text}\n👤 {safe_username}",
+                                  parse_mode="MarkdownV2", reply_markup=keyboard)
 
-    # Сохраняем фото в task_data
-    task_data[user_id]["last_photo"] = photo
+    # Сохраняем ID сообщения
+    task_data[user_id]["last_photo"] = {"message_id": sent_message.message_id, "chat_id": config.control_chat_id}
 
 # --- 3. Обработка нажатий в контрольном чате ---
 @bot.callback_query_handler(func=lambda call: call.data.startswith(("accept_", "reject_")))
 def process_verification(call):
     admin_id = call.from_user.id
     if admin_id != config.ADMIN_ID:
-        bot.answer_callback_query(call.id, "Вы не можете одобрять или отклонять фото.")
+        bot.answer_callback_query(call.id, "⛔ Вы не можете одобрять или отклонять фото.")
         return
 
-    action, user_id = call.data.split("_")
+    action, msg_id, user_id = call.data.split("_")
+    msg_id = int(msg_id)
     user_id = int(user_id)
+
+    # Получаем данные о сообщении с фото
+    if user_id in task_data and "last_photo" in task_data[user_id]:
+        msg_id = task_data[user_id]["last_photo"]["message_id"]
+        chat_id = task_data[user_id]["last_photo"]["chat_id"]
+
+        try:
+            # Убираем кнопки под фото
+            bot.edit_message_reply_markup(chat_id=chat_id, message_id=msg_id, reply_markup=None)
+        except telebot.apihelper.ApiTelegramException:
+            bot.answer_callback_query(call.id, "⚠ Ошибка: сообщение уже изменено или удалено.")
+            return
 
     if action == "accept":
         bot.send_message(user_id, "✅ *Работа выполнена! Спасибо!*", parse_mode="Markdown")
@@ -89,5 +120,5 @@ def request_new_photo(user_id):
 
 # Запуск бота
 if __name__ == "__main__":
-    print("Бот запущен!")
+    print("✅ Бот запущен!")
     bot.polling(none_stop=True)
