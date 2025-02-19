@@ -1,0 +1,13 @@
+[Unit]
+Description=Python Bot
+After=network.target
+
+[Service]
+User=petr
+Environment=PYTHONUNBUFFERED=1
+WorkingDirectory=/home/petr/projects/up-bot-photo
+ExecStart=/home/petr/projects/up-bot-photo/venv/bin/python main.py
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
