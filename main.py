@@ -35,8 +35,38 @@ def handle_command_admins(message: types.Message):
         admin_list.append(f"@{username}")
     bot.send_message(
         chat_id=message.chat.id,
-        text=f'Админы: {admin_list}',
+        text=f"Админы:\n" + "\n".join(admin_list),
     )
+
+
+@bot.message_handler(commands=['bot_users'])
+def handle_bot_users(message):
+    groups = {
+        "Группа 1": config.performers_list_1,
+        "Группа 2": config.performers_list_2,
+        "Группа 3": config.performers_list_3,
+    }
+
+    response = []
+
+    for group_name, users in groups.items():
+        user_list = []
+        for user_id in users:
+            try:
+                user = bot.get_chat(user_id)
+                username = f"@{user.username}" if user.username else f"ID: {user_id}"
+                user_list.append(f"👤 {username}")
+            except Exception as e:
+                print(f"Ошибка получения информации о пользователе {user_id}: {e}")
+
+        if user_list:
+            response.append(f"{group_name}:\n" + "\n".join(user_list))
+        else:
+            response.append(f"{group_name}: Нет пользователей")
+
+    bot.send_message(message.chat.id, "\n\n".join(response), parse_mode="Markdown")
+
+
 
 @bot.message_handler(commands=['my_id'])
 def handle_command_my_id(message: types.Message):
