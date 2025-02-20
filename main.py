@@ -52,7 +52,7 @@ task_data = {}
 # ========= Ручная постановка задачи (админом) =========
 @bot.message_handler(commands=['new_task'])
 def new_task(message):
-    if message.from_user.id != config.ADMIN_ID:
+    if not message.from_user.id in config.ADMIN_ID:
         bot.send_message(message.chat.id, "⛔ У вас нет прав ставить задачи.")
         return
     bot.send_message(message.chat.id, "✏ Введите текст задачи:")
@@ -144,7 +144,7 @@ def receive_photo(message):
 @bot.callback_query_handler(func=lambda call: call.data.startswith(("accept_", "reject_")))
 def process_verification(call):
     admin_id = call.from_user.id
-    if admin_id != config.ADMIN_ID:
+    if not admin_id in config.ADMIN_ID:
         bot.answer_callback_query(call.id, "⛔ Вы не можете одобрять или отклонять фото.")
         return
     action, control_msg_id, user_id = call.data.split("_")
