@@ -7,6 +7,8 @@ import schedule
 import time
 import threading
 
+from config import ADMIN_ID
+
 # Создание бота
 bot = telebot.TeleBot(config.TOKEN)
 
@@ -23,6 +25,18 @@ def handle_command_start(message: types.Message):
 @bot.message_handler(commands=['help'])
 def handle_command_help(message: types.Message):
     bot.send_message(message.chat.id, help_message.help_msg, parse_mode="HTML")
+
+@bot.message_handler(commands=['admins'])
+def handle_command_admins(message: types.Message):
+    admin_list = []
+    for admin_id in config.ADMIN_ID:
+        user = bot.get_chat(admin_id)
+        username = user.username or f"ID: {admin_id}"
+        admin_list.append(f"@{username}")
+    bot.send_message(
+        chat_id=message.chat.id,
+        text=f'Админы: {admin_list}',
+    )
 
 @bot.message_handler(commands=['my_id'])
 def handle_command_my_id(message: types.Message):
