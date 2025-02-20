@@ -62,9 +62,9 @@ def handle_bot_users(message):
         if user_list:
             response.append(f"{group_name}:\n" + "\n".join(user_list))
         else:
-            response.append(f"{group_name}: Нет пользователей")
+            response.append(f"{group_name}:\n Нет пользователей")
 
-    bot.send_message(message.chat.id, "\n\n".join(response), parse_mode="Markdown")
+    bot.send_message(message.chat.id, "\n\n".join(response), parse_mode="HTML")
 
 
 
