@@ -157,7 +157,7 @@ def receive_photo(message):
         return
     photo = message.photo[-1].file_id
     # Попытаемся получить текст задачи для исполнителя; если нет — используем заглушку.
-    task_text = task_data.get(user_id, {}).get("task_text", "Задача без описания")
+    task_text = task_data.get(user_id, {}).get("task_text", "")
     safe_task_text = escape_markdown_v2(task_text)
     username = message.from_user.username or f"ID: {user_id}"
     safe_username = escape_markdown_v2(username)
@@ -171,8 +171,8 @@ def receive_photo(message):
     # Формируем inline-клавиатуру с кнопками "+" и "–"
     keyboard = InlineKeyboardMarkup()
     keyboard.add(
-        InlineKeyboardButton("+", callback_data=f"accept_{sent_message.message_id}_{user_id}"),
-        InlineKeyboardButton("–", callback_data=f"reject_{sent_message.message_id}_{user_id}")
+        InlineKeyboardButton("✅ Принять", callback_data=f"accept_{sent_message.message_id}_{user_id}"),
+        InlineKeyboardButton("❌ Отклонить", callback_data=f"reject_{sent_message.message_id}_{user_id}")
     )
     # Редактируем сообщение, добавляя клавиатуру
     bot.edit_message_reply_markup(chat_id=config.control_chat_id, message_id=sent_message.message_id, reply_markup=keyboard)
