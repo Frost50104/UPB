@@ -61,7 +61,7 @@ def process_time_change(call):
 
 # ========= Обновление `work_time` =========
 def update_schedule(message):
-    """Обновляет список времени отправки задач в `config.py`."""
+    """Обновляет список времени отправки задач в `config.py` и перезапускает планировщик."""
     if not is_admin(message.from_user.id):
         bot.send_message(message.chat.id, "⛔ У вас нет прав изменять расписание.")
         return
@@ -71,13 +71,59 @@ def update_schedule(message):
     # Проверяем корректность формата
     for time_value in new_times:
         if not time_value.count(":") == 1 or not all(x.isdigit() for x in time_value.split(":")):
-            bot.send_message(message.chat.id, "⚠ Ошибка: введите время в формате 'HH:MM HH:MM HH:MM'.")
+            bot.send_message(message.chat.id, "⚠ Ошибка: введите время в формате 'HH:MM HH:MM HH:MM'\n Начните сначала, используя команду /set_time.")
             return
 
-    # Перезаписываем `work_time`
+    # **Перезаписываем `work_time` в config.py**
     config.work_time = new_times
+    with open("config.py", "r") as file:
+        lines = file.readlines()
+
+    for i, line in enumerate(lines):
+        if line.startswith("work_time"):
+            lines[i] = f"work_time = {new_times}\n"
+
+    with open("config.py", "w") as file:
+        file.writelines(lines)
 
     bot.send_message(message.chat.id, f"✅ Время изменено! Новое расписание:\n" + "\n".join(config.work_time))
+
+    # Перезапускаем планировщик
+    restart_scheduler()
+
+
+# ========= Автоматическая отправка задач по расписанию =========
+def send_control_panel_tasks():
+    for performers, tasks_text in config.control_panel.items():
+        for performer in performers:
+            try:
+                bot.send_message(performer, f"📌 *Ваши задачи:*\n{tasks_text}", parse_mode="Markdown")
+                bot.send_message(performer, "📷 Отправьте фото выполнения.")
+            except telebot.apihelper.ApiTelegramException as e:
+                if "bot was blocked by the user" in str(e):
+                    print(f"⚠ Бот заблокирован пользователем {performer}.")
+                else:
+                    print(f"⚠ Ошибка при отправке сообщения пользователю {performer}: {e}")
+
+
+# ========= Перезапуск планировщика =========
+def restart_scheduler():
+    """Перезапускает планировщик с новыми временами"""
+    schedule.clear()
+    for work_time in config.work_time:
+        schedule.every().day.at(work_time).do(send_control_panel_tasks)
+    print(f"✅ Планировщик обновлен! Новое расписание: {config.work_time}")
+
+
+# ========= Фоновый процесс планировщика =========
+def schedule_jobs():
+    while True:
+        schedule.run_pending()
+        time.sleep(30)
+
+schedule_thread = threading.Thread(target=schedule_jobs)
+schedule_thread.daemon = True
+schedule_thread.start()
 
 @bot.message_handler(commands=['start'])
 def handle_command_start(message: types.Message):
