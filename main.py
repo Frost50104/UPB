@@ -12,7 +12,73 @@ from config import ADMIN_ID
 # Создание бота
 bot = telebot.TeleBot(config.TOKEN)
 
+
+# ========= Проверка прав администратора =========
+def is_admin(user_id):
+    """Проверяет, является ли пользователь администратором."""
+    return user_id in config.ADMIN_ID
+
 # ========= Стандартные команды =========
+
+# ========= Команда /set_time =========
+@bot.message_handler(commands=['set_time'])
+def handle_set_time(message):
+    """Запрашивает у администратора изменение времени отправки заданий."""
+    if not is_admin(message.from_user.id):
+        bot.send_message(message.chat.id, "⛔ У вас нет прав изменять время отправки заданий.")
+        return
+
+    # Вывод текущего расписания
+    current_schedule = "\n".join(config.work_time)
+    bot.send_message(message.chat.id, f"🕒 Текущее расписание:\n{current_schedule}")
+
+    # Создание inline-кнопок
+    keyboard = InlineKeyboardMarkup()
+    keyboard.add(
+        InlineKeyboardButton("✅ Да", callback_data="change_time"),
+        InlineKeyboardButton("❌ Нет", callback_data="cancel_time")
+    )
+
+    bot.send_message(message.chat.id, "Желаете изменить время автоматической отправки заданий?", reply_markup=keyboard)
+
+
+# ========= Обработка нажатий "Да" / "Нет" =========
+@bot.callback_query_handler(func=lambda call: call.data in ["change_time", "cancel_time"])
+def process_time_change(call):
+    """Обрабатывает выбор администратора (изменить время или оставить текущее)."""
+    if not is_admin(call.from_user.id):
+        bot.answer_callback_query(call.id, "⛔ У вас нет прав изменять расписание.")
+        return
+
+    if call.data == "change_time":
+        bot.answer_callback_query(call.id, "⏳ Введите новое время в формате 'HH:MM HH:MM HH:MM' (через пробел).")
+        bot.send_message(call.message.chat.id, "Введите новое время:")
+        bot.register_next_step_handler(call.message, update_schedule)
+
+    elif call.data == "cancel_time":
+        bot.answer_callback_query(call.id, "❌ Изменение отменено.")
+
+
+# ========= Обновление `work_time` =========
+def update_schedule(message):
+    """Обновляет список времени отправки задач в `config.py`."""
+    if not is_admin(message.from_user.id):
+        bot.send_message(message.chat.id, "⛔ У вас нет прав изменять расписание.")
+        return
+
+    new_times = message.text.strip().split()
+
+    # Проверяем корректность формата
+    for time_value in new_times:
+        if not time_value.count(":") == 1 or not all(x.isdigit() for x in time_value.split(":")):
+            bot.send_message(message.chat.id, "⚠ Ошибка: введите время в формате 'HH:MM HH:MM HH:MM'.")
+            return
+
+    # Перезаписываем `work_time`
+    config.work_time = new_times
+
+    bot.send_message(message.chat.id, f"✅ Время изменено! Новое расписание:\n" + "\n".join(config.work_time))
+
 @bot.message_handler(commands=['start'])
 def handle_command_start(message: types.Message):
     bot.send_message(message.chat.id, "Привет! Я бот для постановки задач")
