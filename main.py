@@ -162,29 +162,61 @@ task_data = {}
 # ========= Ручная постановка задачи (админом) =========
 @bot.message_handler(commands=['new_task'])
 def new_task(message):
+    """Запрашивает у администратора текст задачи."""
     if not message.from_user.id in config.ADMIN_ID:
         bot.send_message(message.chat.id, "⛔ У вас нет прав ставить задачи.")
         return
-    bot.send_message(message.chat.id, "✏ Введите текст задачи:")
+
+    bot.send_message(message.chat.id, "✏ Введите текст задачи (или напишите 'отмена' для выхода):")
     bot.register_next_step_handler(message, send_task_to_performers)
 
+
 def send_task_to_performers(message):
-    task_text = message.text
-    # Рассылаем задание всем исполнителям, указанным в контрольной панели
+    """Обрабатывает введенный текст задачи, отменяет команду, если введено 'отмена'."""
+    if message.text.lower() == "отмена":
+        bot.send_message(message.chat.id, "🚫 Создание задачи отменено.")
+        return  # Завершаем обработчик
+
+    task_text = message.text  # Получаем текст задания
+
     for performers, tasks_text in config.control_panel.items():
-        # Если админ вручную задаёт задание, можно игнорировать текст из control_panel
-        # или дополнительно отправлять задание всем из всех групп.
         for performer in performers:
             try:
                 bot.send_message(performer, f"📌 *Новое задание:*\n{task_text}", parse_mode="Markdown")
                 bot.send_message(performer, "📷 Отправьте фото выполнения.")
                 task_data[performer] = {"task_text": task_text}
             except telebot.apihelper.ApiTelegramException as e:
-                # Если бот заблокирован пользователем, пропускаем его
                 if "bot was blocked by the user" in str(e):
-                    print(f"Бот заблокирован пользователем {performer}.")
+                    print(f"⚠ Бот заблокирован пользователем {performer}.")
                 else:
-                    print(f"Ошибка при отправке задания пользователю {performer}: {e}")
+                    print(f"⚠ Ошибка при отправке задания пользователю {performer}: {e}")
+
+# ========= Ручная постановка задачи (админом) =========
+# @bot.message_handler(commands=['new_task'])
+# def new_task(message):
+#     if not message.from_user.id in config.ADMIN_ID:
+#         bot.send_message(message.chat.id, "⛔ У вас нет прав ставить задачи.")
+#         return
+#     bot.send_message(message.chat.id, "✏ Введите текст задачи:")
+#     bot.register_next_step_handler(message, send_task_to_performers)
+#
+# def send_task_to_performers(message):
+#     task_text = message.text
+#     # Рассылаем задание всем исполнителям, указанным в контрольной панели
+#     for performers, tasks_text in config.control_panel.items():
+#         # Если админ вручную задаёт задание, можно игнорировать текст из control_panel
+#         # или дополнительно отправлять задание всем из всех групп.
+#         for performer in performers:
+#             try:
+#                 bot.send_message(performer, f"📌 *Новое задание:*\n{task_text}", parse_mode="Markdown")
+#                 bot.send_message(performer, "📷 Отправьте фото выполнения.")
+#                 task_data[performer] = {"task_text": task_text}
+#             except telebot.apihelper.ApiTelegramException as e:
+#                 # Если бот заблокирован пользователем, пропускаем его
+#                 if "bot was blocked by the user" in str(e):
+#                     print(f"Бот заблокирован пользователем {performer}.")
+#                 else:
+#                     print(f"Ошибка при отправке задания пользователю {performer}: {e}")
 
 # ========= Автоматическая отправка задач по расписанию =========
 def send_control_panel_tasks():
