@@ -102,9 +102,16 @@ def process_group_selection_for_delete(call):
         user_list.append(display_text)
         keyboard.add(InlineKeyboardButton(display_text, callback_data=f"delete_user_{selected_group}_{user_id}"))
 
+    # ✅ Добавляем кнопку ❌ "Отмена"
+    keyboard.add(InlineKeyboardButton("❌ Отмена", callback_data="cancel_user_deletion"))
+
     bot.send_message(call.message.chat.id, f"Выберите пользователя для удаления из {selected_group}:\n" +
                      "\n".join(user_list), reply_markup=keyboard)
 
+# ========= Обработка нажатия "Отмена" =========
+@bot.callback_query_handler(func=lambda call: call.data == "cancel_user_deletion")
+def cancel_user_deletion(call):
+    bot.edit_message_text("❌ Удаление пользователя отменено.", call.message.chat.id, call.message.message_id)
 
 # ========= Удаление пользователя и обновление config.py =========
 @bot.callback_query_handler(func=lambda call: call.data.startswith("delete_user_"))
@@ -142,7 +149,9 @@ def process_user_deletion(call):
     group_mapping = {
         "Группа 1": "performers_list_1",
         "Группа 2": "performers_list_2",
-        "Группа 3": "performers_list_3"
+        "Группа 3": "performers_list_3",
+        "Группа 4": "performers_list_4",
+        "Группа 5": "performers_list_5",
     }
 
     # ✅ Теперь selected_group содержит правильное название группы
@@ -267,7 +276,9 @@ def process_user_id(message, selected_group):
     group_mapping = {
         "Группа 1": "performers_list_1",
         "Группа 2": "performers_list_2",
-        "Группа 3": "performers_list_3"
+        "Группа 3": "performers_list_3",
+        "Группа 4": "performers_list_4",
+        "Группа 5": "performers_list_5",
     }
 
     if selected_group not in group_mapping:
@@ -474,6 +485,8 @@ def handle_bot_users(message):
         "Группа 1": config.performers_list_1,
         "Группа 2": config.performers_list_2,
         "Группа 3": config.performers_list_3,
+        "Группа 4": config.performers_list_4,
+        "Группа 5": config.performers_list_5,
     }
 
     response = []
