@@ -11,6 +11,7 @@ from config import ADMIN_ID
 
 # Создание бота
 bot = telebot.TeleBot(config.TOKEN)
+# переключить бота с тестового на основного
 
 
 # ========= Проверка прав администратора =========
