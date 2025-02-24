@@ -13,6 +13,11 @@ from config import ADMIN_ID
 bot = telebot.TeleBot(config.TOKEN)
 # переключить бота с тестового на основного
 
+# ========= Функция экранирования MarkdownV2 =========
+def escape_markdown_v2(text):
+    """Экранирует специальные символы для MarkdownV2"""
+    special_chars = r"\_*[]()~`>#+-=|{}.!"
+    return "".join(f"\\{char}" if char in special_chars else char for char in text)
 
 # ========= Проверка прав администратора =========
 def is_admin(user_id):
@@ -139,17 +144,39 @@ def handle_command_start(message: types.Message):
 def handle_command_help(message: types.Message):
     bot.send_message(message.chat.id, help_message.help_msg, parse_mode="HTML")
 
+
 @bot.message_handler(commands=['admins'])
 def handle_command_admins(message: types.Message):
+    """Выводит список администраторов бота."""
     admin_list = []
+
     for admin_id in config.ADMIN_ID:
-        user = bot.get_chat(admin_id)
-        username = user.username or f"ID: {admin_id}"
-        admin_list.append(f"@{username}")
+        try:
+            user = bot.get_chat(admin_id)
+            username = f"👤 @{user.username}" if user.username else f"ID: {admin_id}"
+        except telebot.apihelper.ApiTelegramException:
+            username = f"👤 ID: {admin_id} (❌ недоступен)"
+
+        # Экранируем username и ID перед отправкой
+        admin_list.append(escape_markdown_v2(username))
+
     bot.send_message(
         chat_id=message.chat.id,
-        text=f"Админы:\n" + "\n".join(admin_list),
+        text=f"🔹 *Список администраторов:*\n" + "\n".join(admin_list),
+        parse_mode="MarkdownV2"
     )
+
+# @bot.message_handler(commands=['admins'])
+# def handle_command_admins(message: types.Message):
+#     admin_list = []
+#     for admin_id in config.ADMIN_ID:
+#         user = bot.get_chat(admin_id)
+#         username = user.username or f"ID: {admin_id}"
+#         admin_list.append(f"@{username}")
+#     bot.send_message(
+#         chat_id=message.chat.id,
+#         text=f"Админы:\n" + "\n".join(admin_list),
+#     )
 
 
 @bot.message_handler(commands=['bot_users'])
@@ -196,12 +223,6 @@ def handle_command_chat_id(message: types.Message):
         f'ID чата:\n<pre>{message.chat.id}</pre>',
         parse_mode="HTML"
     )
-
-# ========= Функция экранирования MarkdownV2 =========
-def escape_markdown_v2(text):
-    """Экранирует специальные символы для MarkdownV2"""
-    special_chars = r"\_*[]()~`>#+-=|{}.!"
-    return "".join(f"\\{char}" if char in special_chars else char for char in text)
 
 # ========= Хранение данных о задачах и фото =========
 task_data = {}
