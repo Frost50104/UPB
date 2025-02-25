@@ -435,6 +435,7 @@ def handle_set_time(message):
     bot.send_message(message.chat.id, "Желаете изменить время автоматической отправки заданий?", reply_markup=keyboard)
 
 
+
 # ========= Обработка нажатий "Да" / "Нет" =========
 @bot.callback_query_handler(func=lambda call: call.data in ["change_time", "cancel_time"])
 def process_time_change(call):
