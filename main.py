@@ -30,6 +30,79 @@ def is_admin(user_id):
 # ========= Стандартные команды =========
 
 
+# ========= Команда /auto_send =========
+@bot.message_handler(commands=['auto_send'])
+def handle_auto_send(message):
+    """Показывает текущий статус автоматической рассылки задач и позволяет изменить его."""
+    if not is_admin(message.from_user.id):
+        bot.send_message(message.chat.id, "⛔ У вас нет прав изменять статус автоматической рассылки.")
+        return
+
+    # Перезагружаем config.py перед выводом информации
+    importlib.reload(config)
+
+    current_status = "✅ Включена" if config.status_work_time == "on" else "⛔ Выключена"
+    schedule_list = "\n".join(config.work_time)
+
+    keyboard = InlineKeyboardMarkup()
+    keyboard.add(
+        InlineKeyboardButton("✅ Да", callback_data="change_auto_send"),
+        InlineKeyboardButton("❌ Нет", callback_data="cancel_auto_send")
+    )
+
+    bot.send_message(
+        message.chat.id,
+        f"📅 *Текущее расписание автоматической рассылки:*\n{schedule_list}\n\n"
+        f"🔄 *Статус автоматической рассылки:* {current_status}\n\n"
+        f"Желаете изменить статус автоматической рассылки?",
+        parse_mode="Markdown",
+        reply_markup=keyboard
+    )
+
+
+# ========= Обработка нажатий "Да" / "Нет" =========
+@bot.callback_query_handler(func=lambda call: call.data in ["change_auto_send", "cancel_auto_send"])
+def process_auto_send_change(call):
+    """Переключает статус автоматической рассылки."""
+    if not is_admin(call.from_user.id):
+        bot.answer_callback_query(call.id, "⛔ У вас нет прав изменять статус автоматической рассылки.")
+        return
+
+    if call.data == "cancel_auto_send":
+        bot.edit_message_text("❌ Изменение отменено.", call.message.chat.id, call.message.message_id)
+        return
+
+    # Перезагружаем config.py перед изменением
+    importlib.reload(config)
+
+    new_status = "off" if config.status_work_time == "on" else "on"
+
+    # Читаем config.py
+    config_file = "config.py"
+    with open(config_file, "r", encoding="utf-8") as file:
+        config_content = file.readlines()
+
+    # Обновляем `status_work_time`
+    for i, line in enumerate(config_content):
+        if line.strip().startswith("status_work_time"):
+            config_content[i] = f"status_work_time = '{new_status}'\n"
+            break
+
+    # Записываем обновленный config.py
+    with open(config_file, "w", encoding="utf-8") as file:
+        file.writelines(config_content)
+
+    # Перезагружаем config.py для применения изменений
+    importlib.reload(config)
+
+    # Перезапускаем автоматическую рассылку
+    restart_scheduler()
+
+    new_status_text = "✅ Включена" if new_status == "on" else "⛔ Выключена"
+    bot.edit_message_text(f"🔄 Новый статус автоматической рассылки: {new_status_text}",
+                          call.message.chat.id, call.message.message_id)
+
+
 # ========= Команда /delete_user =========
 @bot.message_handler(commands=['delete_user'])
 def handle_delete_user(message):
@@ -343,7 +416,14 @@ def handle_set_time(message):
 
     # Вывод текущего расписания
     current_schedule = "\n".join(config.work_time)
-    bot.send_message(message.chat.id, f"🕒 Текущее расписание:\n{current_schedule}")
+    current_status = "✅ Включена" if config.status_work_time == "on" else "⛔ Выключена"
+    # bot.send_message(message.chat.id, f"🕒 Текущее расписание:\n{current_schedule}\n ")
+
+    bot.send_message(
+        message.chat.id,
+        f"🕒 Текущее расписание:\n{current_schedule}\n \n🔄 *Статус автоматической рассылки:* {current_status}\n\n",
+        parse_mode="Markdown",
+    )
 
     # Создание inline-кнопок
     keyboard = InlineKeyboardMarkup()
@@ -364,12 +444,15 @@ def process_time_change(call):
         return
 
     if call.data == "change_time":
-        bot.answer_callback_query(call.id, "⏳ Введите новое время в формате 'HH:MM HH:MM HH:MM' (через пробел).")
-        bot.send_message(call.message.chat.id, "Введите новое время:")
+        # Удаляем inline-кнопки, но оставляем текст сообщения
+        bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
+
+        # Запрашиваем у администратора новое время
+        bot.send_message(call.message.chat.id, "⏳ Введите новое время в формате 'HH:MM HH:MM HH:MM' (через пробел):")
         bot.register_next_step_handler(call.message, update_schedule)
 
     elif call.data == "cancel_time":
-        bot.answer_callback_query(call.id, "❌ Изменение отменено.")
+        bot.edit_message_text("❌ Изменение отменено.", call.message.chat.id, call.message.message_id)
 
 
 # ========= Обновление `work_time` =========
@@ -399,7 +482,18 @@ def update_schedule(message):
     with open("config.py", "w") as file:
         file.writelines(lines)
 
+    # Перезагружаем config.py перед выводом информации
+    importlib.reload(config)
+
+    current_status = "✅ Включена" if config.status_work_time == "on" else "⛔ Выключена"
+
     bot.send_message(message.chat.id, f"✅ Время изменено! Новое расписание:\n" + "\n".join(config.work_time))
+    bot.send_message(
+        message.chat.id,
+        f"🔄 *Статус автоматической рассылки:* {current_status}\n\n",
+        parse_mode="Markdown",
+    )
+
 
     # Перезапускаем планировщик
     restart_scheduler()
@@ -419,13 +513,30 @@ def send_control_panel_tasks():
                     print(f"⚠ Ошибка при отправке сообщения пользователю {performer}: {e}")
 
 
+
 # ========= Перезапуск планировщика =========
 def restart_scheduler():
-    """Перезапускает планировщик с новыми временами"""
+    """Перезапускает планировщик с учетом статуса автоматической рассылки."""
+    importlib.reload(config)  # Перезагружаем config.py
+
     schedule.clear()
+
+    if config.status_work_time == "off":
+        print("⛔ Автоматическая рассылка отключена. Планировщик не запущен.")
+        return  # Если авторассылка отключена, выходим из функции
+
     for work_time in config.work_time:
         schedule.every().day.at(work_time).do(send_control_panel_tasks)
+
     print(f"✅ Планировщик обновлен! Новое расписание: {config.work_time}")
+
+# # ========= Перезапуск планировщика =========
+# def restart_scheduler():
+#     """Перезапускает планировщик с новыми временами"""
+#     schedule.clear()
+#     for work_time in config.work_time:
+#         schedule.every().day.at(work_time).do(send_control_panel_tasks)
+#     print(f"✅ Планировщик обновлен! Новое расписание: {config.work_time}")
 
 
 # ========= Фоновый процесс планировщика =========
