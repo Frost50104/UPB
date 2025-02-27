@@ -30,6 +30,112 @@ def is_admin(user_id):
 # ========= Стандартные команды =========
 
 
+# ========= Команда /set_tasks_group =========
+@bot.message_handler(commands=['set_tasks_group'])
+def handle_set_tasks_group(message):
+    """Позволяет администратору изменить задания для групп."""
+    if not is_admin(message.from_user.id):
+        bot.send_message(message.chat.id, "⛔ У вас нет прав изменять задания групп.")
+        return
+
+    importlib.reload(config)  # Обновляем данные
+
+    # Формируем список групп с текущими заданиями
+    response = "<b>Текущие задания групп:</b>\n\n"
+    for group_name, task_text in config.control_panel.items():
+        response += f"🔹 <b>{group_name}:</b>\n<pre>{task_text.strip()}</pre>\n\n"
+
+    keyboard = InlineKeyboardMarkup()
+    for group_name in config.performers.keys():
+        callback_data = f"edit_task|{message.chat.id}|{group_name}"
+        keyboard.add(InlineKeyboardButton(group_name, callback_data=callback_data))
+
+    bot.send_message(
+        message.chat.id,
+        response + "Выберите группу, для которой хотите изменить задание:",
+        parse_mode="HTML",
+        reply_markup=keyboard
+    )
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("edit_task"))
+def edit_task(call):
+    """Запрашивает у администратора новое задание для выбранной группы."""
+    _, chat_id, group_name = call.data.split("|")
+    chat_id = int(chat_id)
+
+    if chat_id not in task_data:
+        task_data[chat_id] = {}
+
+    task_data[chat_id]["selected_group"] = group_name
+
+    bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
+
+    bot.send_message(chat_id, f"Введите новое задание для группы <b>{group_name}</b>:", parse_mode="HTML")
+    bot.register_next_step_handler_by_chat_id(chat_id, update_task_text)
+
+
+def update_task_text(message):
+    """Обновляет задание для выбранной группы в config.py, не изменяя другие данные."""
+    chat_id = message.chat.id
+
+    if chat_id not in task_data or "selected_group" not in task_data[chat_id]:
+        bot.send_message(chat_id, "⚠ Ошибка: группа не найдена. Повторите команду /set_tasks_group.")
+        return
+
+    new_task_text = message.text.strip()
+    group_name = task_data[chat_id]["selected_group"]
+
+    config_file = "config.py"
+    with open(config_file, "r", encoding="utf-8") as file:
+        config_content = file.readlines()
+
+    # Определяем переменную задания, например: task_group_1, task_group_2 и т. д.
+    group_index = list(config.performers.keys()).index(group_name) + 1
+    task_var_name = f"task_group_{group_index}"
+
+    # Обновленный список строк конфигурации
+    new_config_content = []
+    inside_task_block = False
+    task_updated = False  # Флаг, чтобы обновить только один раз
+
+    for line in config_content:
+        if line.strip().startswith(f"{task_var_name} = "):  # Нашли начало задания
+            inside_task_block = True
+            new_config_content.append(f"{task_var_name} = '''\n{new_task_text}\n'''\n")  # Заменяем задание
+            task_updated = True
+            continue  # Пропускаем старые строки с текстом задания
+
+        if inside_task_block:
+            if "'''" in line or '"""' in line:  # Конец блока задания
+                inside_task_block = False
+            continue  # Пропускаем старые строки с текстом задания
+
+        new_config_content.append(line)  # Добавляем все остальные строки без изменений
+
+    if not task_updated:
+        bot.send_message(chat_id, f"⚠ Ошибка: переменная {task_var_name} не найдена в config.py")
+        return
+
+    # Записываем обновленный config.py
+    with open(config_file, "w", encoding="utf-8") as file:
+        file.writelines(new_config_content)
+
+    # Перезагружаем config.py, чтобы бот сразу видел изменения
+    importlib.reload(config)
+
+    # Обновляем `control_panel`
+    config.control_panel[config.performers[group_name]] = new_task_text
+
+    bot.send_message(
+        chat_id,
+        f"✅ Задание для группы <b>{group_name}</b> успешно обновлено!",
+        parse_mode="HTML"
+    )
+
+    del task_data[chat_id]
+
+
 # ========= Команда /group_task =========
 @bot.message_handler(commands=['group_task'])
 def handle_group_task(message):
