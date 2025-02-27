@@ -42,11 +42,11 @@ def handle_set_tasks_group(message):
 
     # Формируем список групп с текущими заданиями
     response = "<b>Текущие задания групп:</b>\n\n"
-    for group_name, task_text in config.control_panel.items():
-        response += f"🔹 <b>{group_name}:</b>\n<pre>{task_text.strip()}</pre>\n\n"
-
     keyboard = InlineKeyboardMarkup()
-    for group_name in config.performers.keys():
+
+    for group_name, group_users in config.performers.items():
+        task_text = config.control_panel.get(group_users, "❌ Нет задания")
+        response += f"🔹 <b>{group_name}:</b>\n<pre>{task_text.strip()}</pre>\n\n"
         callback_data = f"edit_task|{message.chat.id}|{group_name}"
         keyboard.add(InlineKeyboardButton(group_name, callback_data=callback_data))
 
