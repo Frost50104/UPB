@@ -30,6 +30,153 @@ def is_admin(user_id):
 # ========= Стандартные команды =========
 
 
+# ========= Команда /add_user =========
+@bot.message_handler(commands=['add_user'])
+def handle_add_user(message):
+    """Запускает процесс добавления нового сотрудника."""
+    if not is_admin(message.from_user.id):
+        bot.send_message(message.chat.id, "⛔ У вас нет прав для добавления сотрудников.")
+        return
+
+    keyboard = InlineKeyboardMarkup()
+    keyboard.add(
+        InlineKeyboardButton("✅ Да", callback_data="confirm_add_user"),
+        InlineKeyboardButton("❌ Нет", callback_data="cancel_add_user")
+    )
+
+    bot.send_message(
+        message.chat.id,
+        "Хотите добавить нового пользователя?",
+        parse_mode="HTML",
+        reply_markup=keyboard
+    )
+
+
+@bot.callback_query_handler(func=lambda call: call.data in ["confirm_add_user", "cancel_add_user"])
+def process_add_user_choice(call):
+    """Обрабатывает выбор администратора (добавлять или нет)."""
+    if not is_admin(call.from_user.id):
+        bot.answer_callback_query(call.id, "⛔ У вас нет прав изменять список сотрудников.")
+        return
+
+    if call.data == "cancel_add_user":
+        bot.edit_message_text("❌ Добавление пользователя отменено.", call.message.chat.id, call.message.message_id)
+        return
+
+    # Перезагружаем config.py перед выводом групп
+    importlib.reload(config)
+
+    keyboard = InlineKeyboardMarkup()
+    for group_name in config.performers.keys():
+        keyboard.add(InlineKeyboardButton(group_name, callback_data=f"select_group|{call.message.chat.id}|{group_name}"))
+
+    bot.edit_message_text(
+        "Выберите группу, в которую нужно добавить нового сотрудника:",
+        call.message.chat.id,
+        call.message.message_id,
+        reply_markup=keyboard
+    )
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("select_group"))
+def select_group_for_user(call):
+    """Сохраняет выбранную группу и запрашивает ID сотрудника."""
+    _, chat_id, group_name = call.data.split("|")
+    chat_id = int(chat_id)
+
+    if chat_id not in task_data:
+        task_data[chat_id] = {}
+
+    task_data[chat_id]["selected_group"] = group_name
+
+    bot.edit_message_text(
+        f"Выбрана группа: <b>{group_name}</b>\n\nВведите ID сотрудника:",
+        chat_id,
+        call.message.message_id,
+        parse_mode="HTML"
+    )
+
+    bot.register_next_step_handler_by_chat_id(chat_id, process_new_user_id)
+
+
+def process_new_user_id(message):
+    """Добавляет нового сотрудника в config.py."""
+    chat_id = message.chat.id
+
+    if chat_id not in task_data or "selected_group" not in task_data[chat_id]:
+        bot.send_message(chat_id, "⚠ Ошибка: группа не найдена. Повторите команду /add_user.")
+        return
+
+    try:
+        new_user_id = int(message.text.strip())
+    except ValueError:
+        bot.send_message(chat_id, "⚠ Ошибка: ID должен быть числом. Попробуйте снова.", parse_mode="HTML")
+        return
+
+    group_name = task_data[chat_id]["selected_group"]
+
+    # Читаем config.py
+    config_file = "config.py"
+    with open(config_file, "r", encoding="utf-8") as file:
+        config_content = file.readlines()
+
+    # Определяем имя переменной с кортежем сотрудников
+    group_var_name = None
+    for var_name in config.performers.keys():
+        if var_name == group_name:
+            group_var_name = f"performers_list_{list(config.performers.keys()).index(var_name) + 1}"
+            break
+
+    if not group_var_name:
+        bot.send_message(chat_id, f"⚠ Ошибка: группа <b>{group_name}</b> не найдена в config.py", parse_mode="HTML")
+        return
+
+    # Обновляем список сотрудников
+    new_config_content = []
+    group_updated = False
+
+    for line in config_content:
+        if line.strip().startswith(f"{group_var_name} ="):
+            match = re.search(r"\((.*?)\)", line)
+            if match:
+                existing_ids = match.group(1).strip()
+                existing_ids_list = [int(x.strip()) for x in existing_ids.split(",") if x.strip().isdigit()]
+            else:
+                existing_ids_list = []
+
+            if new_user_id in existing_ids_list:
+                bot.send_message(chat_id, f"⚠ Пользователь с ID <b>{new_user_id}</b> уже в группе {group_name}.", parse_mode="HTML")
+                return
+
+            existing_ids_list.append(new_user_id)
+            updated_ids = ", ".join(map(str, existing_ids_list))
+
+            # Обновляем строку в файле
+            new_config_content.append(f"{group_var_name} = ({updated_ids},)\n")
+            group_updated = True
+        else:
+            new_config_content.append(line)
+
+    if not group_updated:
+        bot.send_message(chat_id, f"⚠ Ошибка: список сотрудников группы <b>{group_name}</b> не найден в config.py", parse_mode="HTML")
+        return
+
+    # Записываем обновленный config.py
+    with open(config_file, "w", encoding="utf-8") as file:
+        file.writelines(new_config_content)
+
+    # Перезагружаем config.py
+    importlib.reload(config)
+
+    bot.send_message(
+        chat_id,
+        f"✅ Пользователь с ID <b>{new_user_id}</b> добавлен в группу <b>{group_name}</b>!",
+        parse_mode="HTML"
+    )
+
+    del task_data[chat_id]
+
+
 # ========= Команда /set_tasks_group =========
 @bot.message_handler(commands=['set_tasks_group'])
 def handle_set_tasks_group(message):
@@ -738,308 +885,7 @@ def process_auto_send_change(call):
                           call.message.chat.id, call.message.message_id)
 
 
-# ========= Команда /delete_user =========
-@bot.message_handler(commands=['delete_user'])
-def handle_delete_user(message):
-    """Запускает процесс удаления пользователя из группы."""
-    if not is_admin(message.from_user.id):
-        bot.send_message(message.chat.id, "⛔ У вас нет прав для удаления пользователей.")
-        return
 
-    keyboard = InlineKeyboardMarkup()
-    keyboard.add(
-        InlineKeyboardButton("✅ Да", callback_data="confirm_delete_user"),
-        InlineKeyboardButton("❌ Нет", callback_data="cancel_delete_user")
-    )
-
-    bot.send_message(message.chat.id, "Хотите удалить пользователя?", reply_markup=keyboard)
-
-
-# ========= Обработка выбора "Да" / "Нет" =========
-@bot.callback_query_handler(func=lambda call: call.data in ["confirm_delete_user", "cancel_delete_user"])
-def process_delete_user_choice(call):
-    if not is_admin(call.from_user.id):
-        bot.answer_callback_query(call.id, "⛔ У вас нет прав для удаления пользователей.")
-        return
-
-    if call.data == "confirm_delete_user":
-        # Перезагружаем config.py перед выводом списка
-        importlib.reload(config)
-
-        keyboard = InlineKeyboardMarkup()
-        for group_name, user_ids in config.performers.items():
-            keyboard.add(InlineKeyboardButton(group_name, callback_data=f"select_group_for_delete_{group_name}"))
-
-        bot.edit_message_text("Выберите группу, из которой хотите удалить сотрудника:",
-                              call.message.chat.id, call.message.message_id, reply_markup=keyboard)
-
-    elif call.data == "cancel_delete_user":
-        bot.edit_message_text("❌ Удаление пользователя отменено.", call.message.chat.id, call.message.message_id)
-
-
-# ========= Обработка выбора группы для удаления =========
-@bot.callback_query_handler(func=lambda call: call.data.startswith("select_group_for_delete_"))
-def process_group_selection_for_delete(call):
-    if not is_admin(call.from_user.id):
-        bot.answer_callback_query(call.id, "⛔ У вас нет прав для удаления пользователей.")
-        return
-
-    selected_group = call.data.replace("select_group_for_delete_", "")
-
-    # Перезагружаем config.py
-    importlib.reload(config)
-
-    user_ids = config.performers.get(selected_group, [])
-
-    if not user_ids:
-        bot.send_message(call.message.chat.id, f"🔹 В группе {selected_group} нет сотрудников.")
-        return
-
-    keyboard = InlineKeyboardMarkup()
-    user_list = []
-
-    for user_id in user_ids:
-        try:
-            user = bot.get_chat(user_id)
-            username = f"@{user.username}" if user.username else f"Без username"
-            first_name = user.first_name or "Без имени"
-            display_text = f"{first_name} ({username}) - {user_id}"
-        except telebot.apihelper.ApiTelegramException:
-            display_text = f"❌ Не найден - {user_id}"
-
-        user_list.append(display_text)
-        keyboard.add(InlineKeyboardButton(display_text, callback_data=f"delete_user_{selected_group}_{user_id}"))
-
-    # ✅ Добавляем кнопку ❌ "Отмена"
-    keyboard.add(InlineKeyboardButton("❌ Отмена", callback_data="cancel_user_deletion"))
-
-    bot.send_message(call.message.chat.id, f"Выберите пользователя для удаления из {selected_group}:\n" +
-                     "\n".join(user_list), reply_markup=keyboard)
-
-# ========= Обработка нажатия "Отмена" =========
-@bot.callback_query_handler(func=lambda call: call.data == "cancel_user_deletion")
-def cancel_user_deletion(call):
-    bot.edit_message_text("❌ Удаление пользователя отменено.", call.message.chat.id, call.message.message_id)
-
-# ========= Удаление пользователя и обновление config.py =========
-@bot.callback_query_handler(func=lambda call: call.data.startswith("delete_user_"))
-def process_user_deletion(call):
-    if not is_admin(call.from_user.id):
-        bot.answer_callback_query(call.id, "⛔ У вас нет прав для удаления пользователей.")
-        return
-
-    # ✅ Отладочный print
-    print(f"DEBUG: call.data = {call.data}")
-
-    try:
-        # Разделяем строку **по последнему подчеркиванию**, чтобы корректно извлечь группу
-        data_parts = call.data[len("delete_user_"):].rsplit("_", 1)
-        if len(data_parts) != 2:
-            raise ValueError("Ошибка разбора данных")
-
-        selected_group, user_id = data_parts
-        user_id = int(user_id)  # Преобразуем ID в число
-    except ValueError as e:
-        print(f"DEBUG: Ошибка парсинга call.data -> {e}")
-        bot.send_message(call.message.chat.id, "⚠ Ошибка: некорректный формат ID пользователя.")
-        return
-
-    # ✅ Отладочный print
-    print(f"DEBUG: selected_group = {selected_group}, user_id = {user_id}")
-
-    config_file = "config.py"
-
-    # Читаем config.py
-    with open(config_file, "r", encoding="utf-8") as file:
-        config_content = file.readlines()
-
-    # Карта групп
-    group_mapping = {
-        "Группа 1": "performers_list_1",
-        "Группа 2": "performers_list_2",
-        "Группа 3": "performers_list_3",
-        "Группа 4": "performers_list_4",
-        "Группа 5": "performers_list_5",
-    }
-
-    # ✅ Теперь selected_group содержит правильное название группы
-    if selected_group not in group_mapping:
-        bot.send_message(call.message.chat.id, f"⚠ Ошибка: группа <b>{selected_group}</b> не найдена в config.py",
-                         parse_mode="HTML")
-        return
-
-    target_list = group_mapping[selected_group]
-
-    # Удаление пользователя из config.py
-    for i, line in enumerate(config_content):
-        if line.strip().startswith(f"{target_list} = (") or line.strip().startswith(f"{target_list} = "):
-            match = re.search(r"\((.*?)\)", line)
-            if match:
-                existing_ids = match.group(1).strip()
-                existing_ids_list = [int(x.strip()) for x in existing_ids.split(",") if x.strip().isdigit()]
-            else:
-                existing_ids_list = []
-
-            if user_id not in existing_ids_list:
-                bot.send_message(call.message.chat.id, f"⚠ Пользователь с ID {user_id} не найден в группе {selected_group}.")
-                return
-
-            # Удаляем пользователя из списка
-            existing_ids_list.remove(user_id)
-            updated_ids = ", ".join(map(str, existing_ids_list))
-
-            # Если список пуст, оставляем пустые скобки
-            config_content[i] = f"{target_list} = ({updated_ids},)\n" if updated_ids else f"{target_list} = ()\n"
-            break
-    else:
-        bot.send_message(call.message.chat.id, f"⚠ Ошибка: список {target_list} не найден в config.py", parse_mode="HTML")
-        return
-
-    # Записываем обновленный config.py
-    with open(config_file, "w", encoding="utf-8") as file:
-        file.writelines(config_content)
-
-    # 🔄 Перезагружаем config.py, чтобы бот сразу видел изменения
-    importlib.reload(config)
-
-    bot.send_message(
-        call.message.chat.id,
-        f"✅ Пользователь с ID <code>{user_id}</code> удален из <b>{selected_group}</b>.",
-        parse_mode="HTML"
-    )
-
-
-# ========= Команда /add_user =========
-@bot.message_handler(commands=['add_user'])
-def handle_add_user(message):
-    """Запускает процесс добавления нового пользователя в группу."""
-    if not is_admin(message.from_user.id):
-        bot.send_message(message.chat.id, "⛔ У вас нет прав для добавления пользователей.")
-        return
-
-    keyboard = InlineKeyboardMarkup()
-    keyboard.add(
-        InlineKeyboardButton("✅ Да", callback_data="confirm_add_user"),
-        InlineKeyboardButton("❌ Нет", callback_data="cancel_add_user")
-    )
-
-    bot.send_message(message.chat.id, "Хотите добавить нового пользователя?", reply_markup=keyboard)
-
-
-# ========= Обработка выбора "Да" / "Нет" =========
-@bot.callback_query_handler(func=lambda call: call.data in ["confirm_add_user", "cancel_add_user"])
-def process_add_user_choice(call):
-    if not is_admin(call.from_user.id):
-        bot.answer_callback_query(call.id, "⛔ У вас нет прав для изменения пользователей.")
-        return
-
-    if call.data == "confirm_add_user":
-        keyboard = InlineKeyboardMarkup()
-        for group_name in config.performers.keys():
-            keyboard.add(InlineKeyboardButton(group_name, callback_data=f"select_group_{group_name}"))
-
-        bot.edit_message_text("Выберите группу, в которую хотите добавить сотрудника:",
-                              call.message.chat.id, call.message.message_id, reply_markup=keyboard)
-
-    elif call.data == "cancel_add_user":
-        bot.edit_message_text("❌ Добавление пользователя отменено.", call.message.chat.id, call.message.message_id)
-
-
-# ========= Обработка выбора группы =========
-@bot.callback_query_handler(func=lambda call: call.data.startswith("select_group_"))
-def process_group_selection(call):
-    if not is_admin(call.from_user.id):
-        bot.answer_callback_query(call.id, "⛔ У вас нет прав для изменения пользователей.")
-        return
-
-    selected_group = call.data.replace("select_group_", "")
-    bot.answer_callback_query(call.id)
-    bot.send_message(call.message.chat.id, f"Вы выбрали: *{selected_group}*.\n\nУкажите ID нового сотрудника:",
-                     parse_mode="Markdown")
-
-    # Запоминаем выбранную группу
-    bot.register_next_step_handler(call.message, lambda msg: process_user_id(msg, selected_group))
-
-
-# ========= Обработка ID нового пользователя =========
-def process_user_id(message, selected_group):
-    """Добавляет новый ID пользователя в выбранную группу и обновляет config.py."""
-    if not is_admin(message.from_user.id):
-        bot.send_message(message.chat.id, "⛔ У вас нет прав для изменения пользователей.")
-        return
-
-    try:
-        new_user_id = int(message.text.strip())  # Преобразуем в int
-    except ValueError:
-        bot.send_message(message.chat.id, "⚠ Ошибка: ID должен быть числом. Попробуйте снова с командой /add_user.")
-        return
-
-    config_file = "config.py"
-
-    # Читаем config.py
-    with open(config_file, "r", encoding="utf-8") as file:
-        config_content = file.readlines()
-
-    # Определяем, какой performers_list_X обновлять
-    group_mapping = {
-        "Группа 1": "performers_list_1",
-        "Группа 2": "performers_list_2",
-        "Группа 3": "performers_list_3",
-        "Группа 4": "performers_list_4",
-        "Группа 5": "performers_list_5",
-    }
-
-    if selected_group not in group_mapping:
-        bot.send_message(message.chat.id, f"⚠ Ошибка: группа <b>{selected_group}</b> не найдена в config.py",
-                         parse_mode="HTML")
-        return
-
-    target_list = group_mapping[selected_group]
-
-    # Найдем строку с соответствующим списком
-    for i, line in enumerate(config_content):
-        if line.strip().startswith(f"{target_list} = (") or line.strip().startswith(f"{target_list} = "):
-            # Извлекаем текущий список ID
-            match = re.search(r"\((.*?)\)", line)
-            if match:
-                existing_ids = match.group(1).strip()
-                existing_ids_list = [int(x.strip()) for x in existing_ids.split(",") if x.strip().isdigit()]
-            else:
-                # Если список пуст или записан как число (int), исправляем
-                existing_ids_list = []
-                if "=" in line:
-                    current_value = line.split("=")[1].strip()
-                    if current_value.isdigit():  # Если это просто число, превращаем в tuple
-                        existing_ids_list.append(int(current_value))
-
-            # Проверим, есть ли уже такой ID
-            if new_user_id in existing_ids_list:
-                bot.send_message(message.chat.id,
-                                 f"⚠ Пользователь с ID <code>{new_user_id}</code> уже в группе <b>{selected_group}</b>.",
-                                 parse_mode="HTML")
-                return
-
-            # Добавляем новый ID и формируем обновленную строку как `tuple`
-            existing_ids_list.append(new_user_id)
-            updated_ids = ", ".join(map(str, existing_ids_list))
-            config_content[i] = f"{target_list} = ({updated_ids},)\n"  # ✅ Гарантируем `tuple`
-            break
-    else:
-        bot.send_message(message.chat.id, f"⚠ Ошибка: список {target_list} не найден в config.py", parse_mode="HTML")
-        return
-
-    # Записываем обновленный config.py
-    with open(config_file, "w", encoding="utf-8") as file:
-        file.writelines(config_content)
-
-    # 🔄 Перезагружаем config.py, чтобы бот сразу увидел изменения
-    importlib.reload(config)
-
-    bot.send_message(
-        message.chat.id,
-        f"✅ Сотрудник с ID <code>{new_user_id}</code> добавлен в <b>{selected_group}</b>.",
-        parse_mode="HTML"
-    )
 
 # ========= Команда /set_time =========
 @bot.message_handler(commands=['set_time'])
