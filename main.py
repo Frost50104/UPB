@@ -1225,20 +1225,11 @@ def handle_command_admins(message: types.Message):
 def handle_bot_users(message):
     """Выводит актуальный список сотрудников по группам."""
 
-    # Динамическая перезагрузка config.py
-    importlib.reload(config)
-
-    groups = {
-        "Группа 1": config.performers_list_1,
-        "Группа 2": config.performers_list_2,
-        "Группа 3": config.performers_list_3,
-        "Группа 4": config.performers_list_4,
-        "Группа 5": config.performers_list_5,
-    }
+    importlib.reload(config)  # Перезагружаем config.py
 
     response = []
 
-    for group_name, users in groups.items():
+    for group_name, users in config.performers.items():
         user_list = []
         for user_id in users:
             try:
@@ -1254,7 +1245,6 @@ def handle_bot_users(message):
             response.append(f"<b>{group_name}</b>:\n 🔹 Нет сотрудников.")
 
     bot.send_message(message.chat.id, "\n\n".join(response), parse_mode="HTML")
-
 
 @bot.message_handler(commands=['my_id'])
 def handle_command_my_id(message: types.Message):
