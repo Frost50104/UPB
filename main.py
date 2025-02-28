@@ -486,6 +486,16 @@ def send_group_selection(chat_id):
 
     keyboard = InlineKeyboardMarkup()
 
+    # Если нет доступных групп, сразу переходим к шагу подтверждения отправки
+    if not available_groups:
+        bot.send_message(
+            chat_id,
+            "Больше нет доступных групп",
+            parse_mode="HTML"
+        )
+        send_selected_groups(chat_id)
+        return
+
     for group_name in available_groups:
         callback_data = f"group_task_select|{chat_id}|{group_name}"  # Уникальный префикс
         keyboard.add(InlineKeyboardButton(group_name, callback_data=callback_data))
