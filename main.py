@@ -635,8 +635,14 @@ def send_employee_selection(chat_id):
             except telebot.apihelper.ApiTelegramException:
                 continue
 
+    # Если нет доступных пользователей, сразу предлагаем отправить задачу
     if not available_users:
-        bot.send_message(chat_id, "❌ Нет доступных сотрудников для выбора.")
+        bot.send_message(
+            chat_id,
+            "Больше нет доступных сотрудников",
+            parse_mode="HTML"
+        )
+        send_selected_users(chat_id)
         return
 
     keyboard.add(
