@@ -472,6 +472,7 @@ def process_group_task_text(message):
     task_text = message.text.strip()
     chat_id = message.chat.id
 
+    # Сохраняем данные о задаче
     task_data[chat_id] = {"task_text": task_text, "selected_groups": []}
 
     send_group_selection(chat_id)
@@ -484,16 +485,13 @@ def send_group_selection(chat_id):
     selected_groups = task_data[chat_id]["selected_groups"]
     available_groups = [group for group in config.performers.keys() if group not in selected_groups]
 
-    if not available_groups:
-        bot.send_message(chat_id, "❌ Нет доступных групп для выбора.")
-        return
-
     keyboard = InlineKeyboardMarkup()
+
     for group_name in available_groups:
-        callback_data = f"select_group|{chat_id}|{group_name}"
+        callback_data = f"group_task_select|{chat_id}|{group_name}"  # Уникальный префикс
         keyboard.add(InlineKeyboardButton(group_name, callback_data=callback_data))
 
-    keyboard.add(InlineKeyboardButton("❌ Отмена", callback_data=f"cancel_task|{chat_id}"))
+    keyboard.add(InlineKeyboardButton("❌ Отмена", callback_data=f"group_task_cancel|{chat_id}"))
 
     bot.send_message(
         chat_id,
@@ -503,9 +501,9 @@ def send_group_selection(chat_id):
     )
 
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("select_group"))
+@bot.callback_query_handler(func=lambda call: call.data.startswith("group_task_select"))
 def select_group(call):
-    """Добавляет группу в список получателей задачи."""
+    """Добавляет группу в список получателей задачи и предлагает выбрать еще или отправить."""
     _, chat_id, group_name = call.data.split("|")
     chat_id = int(chat_id)
 
@@ -528,9 +526,9 @@ def send_selected_groups(chat_id):
 
     keyboard = InlineKeyboardMarkup()
     keyboard.add(
-        InlineKeyboardButton("➕ Добавить ещё", callback_data=f"add_more_groups|{chat_id}"),
-        InlineKeyboardButton("📨 ОТПРАВИТЬ", callback_data=f"send_group_task|{chat_id}"),
-        InlineKeyboardButton("❌ Отмена", callback_data=f"cancel_task|{chat_id}")
+        InlineKeyboardButton("➕ Добавить ещё", callback_data=f"group_task_add_more|{chat_id}"),
+        InlineKeyboardButton("📨 ОТПРАВИТЬ", callback_data=f"group_task_send|{chat_id}"),
+        InlineKeyboardButton("❌ Отмена", callback_data=f"group_task_cancel|{chat_id}")
     )
 
     bot.send_message(
@@ -541,7 +539,7 @@ def send_selected_groups(chat_id):
     )
 
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("add_more_groups"))
+@bot.callback_query_handler(func=lambda call: call.data.startswith("group_task_add_more"))
 def add_more_groups(call):
     """Позволяет выбрать ещё группы."""
     chat_id = int(call.data.split("|")[1])
@@ -549,7 +547,7 @@ def add_more_groups(call):
     send_group_selection(chat_id)
 
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("send_group_task"))
+@bot.callback_query_handler(func=lambda call: call.data.startswith("group_task_send"))
 def send_group_task(call):
     """Отправляет задачу выбранным группам."""
     chat_id = int(call.data.split("|")[1])
@@ -579,7 +577,7 @@ def send_group_task(call):
     del task_data[chat_id]
 
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("cancel_task"))
+@bot.callback_query_handler(func=lambda call: call.data.startswith("group_task_cancel"))
 def cancel_task(call):
     """Отмена создания задачи."""
     chat_id = int(call.data.split("|")[1])
