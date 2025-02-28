@@ -450,7 +450,6 @@ def update_task_text(message):
 
     del task_data[chat_id]
 
-
 # ========= Команда /group_task =========
 @bot.message_handler(commands=['group_task'])
 def handle_group_task(message):
@@ -689,14 +688,12 @@ def send_selected_users(chat_id):
         reply_markup=keyboard
     )
 
-
 @bot.callback_query_handler(func=lambda call: call.data.startswith("add_more_users"))
 def add_more_users(call):
     """Позволяет выбрать ещё сотрудников."""
     chat_id = int(call.data.split("|")[1])
     bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
     send_employee_selection(chat_id)
-
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("send_task"))
 def send_task(call):
@@ -1051,8 +1048,6 @@ def process_auto_send_change(call):
                           call.message.chat.id, call.message.message_id)
 
 
-
-
 # ========= Команда /set_time =========
 @bot.message_handler(commands=['set_time'])
 def handle_set_time(message):
@@ -1080,8 +1075,6 @@ def handle_set_time(message):
     )
 
     bot.send_message(message.chat.id, "Желаете изменить время автоматической отправки заданий?", reply_markup=keyboard)
-
-
 
 # ========= Обработка нажатий "Да" / "Нет" =========
 @bot.callback_query_handler(func=lambda call: call.data in ["change_time", "cancel_time"])
@@ -1112,25 +1105,36 @@ def update_schedule(message):
 
     new_times = message.text.strip().split()
 
-    # Проверяем корректность формата
+    # Проверяем корректность формата и исправляем, если нужно
+    corrected_times = []
     for time_value in new_times:
-        if not time_value.count(":") == 1 or not all(x.isdigit() for x in time_value.split(":")):
-            bot.send_message(message.chat.id, "⚠ Ошибка: введите время в формате 'HH:MM HH:MM HH:MM'\n Начните сначала, используя команду /set_time.")
+        match = re.match(r"^(\d{1,2}):(\d{2})$", time_value)
+        if not match:
+            bot.send_message(
+                message.chat.id,
+                "⚠ Ошибка: введите время в формате 'H:MM' или 'HH:MM'.\n"
+                "Пример: 9:30 или 09:30\n"
+                "Начните сначала, используя команду /set_time."
+            )
             return
 
+        hours, minutes = match.groups()
+        hours = hours.zfill(2)  # Добавляем ноль перед однозначными числами
+        corrected_times.append(f"{hours}:{minutes}")
+
     # **Перезаписываем `work_time` в config.py**
-    config.work_time = new_times
-    with open("config.py", "r") as file:
+    config.work_time = corrected_times
+    with open("config.py", "r", encoding="utf-8") as file:
         lines = file.readlines()
 
     for i, line in enumerate(lines):
         if line.startswith("work_time"):
-            lines[i] = f"work_time = {new_times}\n"
+            lines[i] = f"work_time = {corrected_times}\n"
 
-    with open("config.py", "w") as file:
+    with open("config.py", "w", encoding="utf-8") as file:
         file.writelines(lines)
 
-    # Перезагружаем config.py перед выводом информации
+    # Перезагружаем config.py
     importlib.reload(config)
 
     current_status = "✅ Включена" if config.status_work_time == "on" else "⛔ Выключена"
@@ -1141,7 +1145,6 @@ def update_schedule(message):
         f"🔄 *Статус автоматической рассылки:* {current_status}\n\n",
         parse_mode="Markdown",
     )
-
 
     # Перезапускаем планировщик
     restart_scheduler()
@@ -1177,14 +1180,6 @@ def restart_scheduler():
         schedule.every().day.at(work_time).do(send_control_panel_tasks)
 
     print(f"✅ Планировщик обновлен! Новое расписание: {config.work_time}")
-
-# # ========= Перезапуск планировщика =========
-# def restart_scheduler():
-#     """Перезапускает планировщик с новыми временами"""
-#     schedule.clear()
-#     for work_time in config.work_time:
-#         schedule.every().day.at(work_time).do(send_control_panel_tasks)
-#     print(f"✅ Планировщик обновлен! Новое расписание: {config.work_time}")
 
 
 # ========= Фоновый процесс планировщика =========
