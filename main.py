@@ -375,12 +375,14 @@ def process_add_user_choice(call):
         bot.edit_message_text("❌ Добавление пользователя отменено.", call.message.chat.id, call.message.message_id)
         return
 
-    # Перезагружаем config.py перед выводом групп
+    # Перезагружаем config перед созданием кнопок
     importlib.reload(config)
 
     keyboard = InlineKeyboardMarkup()
-    for group_name in config.performers.keys():
-        keyboard.add(InlineKeyboardButton(group_name, callback_data=f"select_group|{call.message.chat.id}|{group_name}"))
+    group_index_map = {str(index): group for index, group in enumerate(config.performers.keys())}
+
+    for index, group_name in group_index_map.items():
+        keyboard.add(InlineKeyboardButton(group_name[:30], callback_data=f"select_group_{index}"))
 
     bot.edit_message_text(
         "Выберите группу, в которую нужно добавить нового сотрудника:",
@@ -389,20 +391,32 @@ def process_add_user_choice(call):
         reply_markup=keyboard
     )
 
+    # Сохраняем соответствие индексов и названий групп
+    task_data[call.message.chat.id] = {"group_index_map": group_index_map}
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("select_group"))
-def select_group_for_user(call):
-    """Сохраняет выбранную группу и запрашивает ID сотрудника."""
-    _, chat_id, group_name = call.data.split("|")
-    chat_id = int(chat_id)
 
-    if chat_id not in task_data:
-        task_data[chat_id] = {}
+@bot.callback_query_handler(func=lambda call: call.data.startswith("select_group_"))
+def select_group(call):
+    """Запрашивает ID нового сотрудника после выбора группы."""
+    chat_id = call.message.chat.id
+    group_index = call.data.split("_")[2]
 
+    if chat_id not in task_data or "group_index_map" not in task_data[chat_id]:
+        bot.send_message(chat_id, "⚠ Ошибка: данные не найдены. Повторите команду /add_user.")
+        return
+
+    # Получаем название группы по индексу
+    group_name = task_data[chat_id]["group_index_map"].get(group_index)
+
+    if not group_name:
+        bot.send_message(chat_id, "⚠ Ошибка: группа не найдена.")
+        return
+
+    # Сохраняем выбранную группу
     task_data[chat_id]["selected_group"] = group_name
 
     bot.edit_message_text(
-        f"Выбрана группа: <b>{group_name}</b>\n\nВведите ID сотрудника:",
+        f"Вы выбрали группу <b>{group_name}</b>\n\nУкажите ID сотрудника:",
         chat_id,
         call.message.message_id,
         parse_mode="HTML"
