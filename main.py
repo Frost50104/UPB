@@ -1312,18 +1312,21 @@ def update_schedule(message):
 
 # ========= Автоматическая отправка задач по расписанию =========
 def send_control_panel_tasks():
+    """Отправляет задачи сотрудникам и сохраняет их текст в task_data."""
     for performers, tasks_text in config.control_panel.items():
         for performer in performers:
             try:
                 bot.send_message(performer, f"📌 *Ваши задачи:*\n{tasks_text}", parse_mode="Markdown")
                 bot.send_message(performer, "📷 Отправьте фото выполнения.")
+
+                # ✅ Сохраняем текст задачи в task_data
+                task_data[performer] = {"task_text": tasks_text}
+
             except telebot.apihelper.ApiTelegramException as e:
                 if "bot was blocked by the user" in str(e):
                     print(f"⚠ Бот заблокирован пользователем {performer}.")
                 else:
                     print(f"⚠ Ошибка при отправке сообщения пользователю {performer}: {e}")
-
-
 
 # ========= Перезапуск планировщика =========
 def restart_scheduler():
@@ -1344,9 +1347,14 @@ def restart_scheduler():
 
 # ========= Фоновый процесс планировщика =========
 def schedule_jobs():
+    """Запускает бесконечный цикл выполнения задач, но только если авторассылка включена."""
     while True:
-        schedule.run_pending()
-        time.sleep(30)
+        importlib.reload(config)  # Загружаем актуальные настройки
+
+        if config.status_work_time == "on":
+            schedule.run_pending()
+
+        time.sleep(20)  # Проверка каждые 20 секунд
 
 schedule_thread = threading.Thread(target=schedule_jobs)
 schedule_thread.daemon = True
@@ -1465,33 +1473,6 @@ def send_task_to_performers(message):
                     print(f"⚠ Ошибка при отправке задания пользователю {performer}: {e}")
 
 
-# ========= Автоматическая отправка задач по расписанию =========
-def send_control_panel_tasks():
-    # Для каждого набора исполнителей в контрольной панели отправляем им соответствующие задачи
-    for performers, tasks_text in config.control_panel.items():
-        for performer in performers:
-            try:
-                bot.send_message(performer, f"📌 *Ваши задачи:*\n{tasks_text}", parse_mode="Markdown")
-                bot.send_message(performer, "📷 Отправьте фото выполнения.")
-                task_data[performer] = {"task_text": tasks_text}
-            except telebot.apihelper.ApiTelegramException as e:
-                if "bot was blocked by the user" in str(e):
-                    print(f"Бот заблокирован пользователем {performer}.")
-                else:
-                    print(f"Ошибка при отправке сообщения пользователю {performer}: {e}")
-
-def schedule_jobs():
-    # Для каждого времени из work_time планируем автоматическую рассылку
-    for work_time in config.work_time:
-        schedule.every().day.at(work_time).do(send_control_panel_tasks)
-    while True:
-        schedule.run_pending()
-        time.sleep(1)
-
-# Запуск планировщика в отдельном потоке
-schedule_thread = threading.Thread(target=schedule_jobs)
-schedule_thread.daemon = True
-schedule_thread.start()
 
 # ========= Получение фото от исполнителя =========
 @bot.message_handler(content_types=['photo'])
