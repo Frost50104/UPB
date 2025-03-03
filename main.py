@@ -459,6 +459,9 @@ def delete_employee(call):
         bot.send_message(chat_id, "⚠ Ошибка: группа не найдена.")
         return
 
+    # Убираем inline-кнопки
+    bot.edit_message_reply_markup(chat_id, call.message.message_id, reply_markup=None)
+
     # Читаем config.py
     config_file = "config.py"
     with open(config_file, "r", encoding="utf-8") as file:
