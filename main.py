@@ -930,7 +930,16 @@ def select_employee(call):
 def send_selected_users(chat_id):
     """Отправляет сообщение с выбранными пользователями и возможностью добавить ещё или отправить."""
     selected_users = task_data[chat_id]["selected_users"]
-    selected_text = "\n".join([f"✅ <code>{uid}</code>" for uid in selected_users])
+    selected_text = ""
+
+    for user_id in selected_users:
+        try:
+            user = bot.get_chat(user_id)
+            username = f"(@{user.username})" if user.username else ""
+            first_name = user.first_name or "Без имени"
+            selected_text += f"✅ {first_name} {username} - <code>{user_id}</code>\n"
+        except telebot.apihelper.ApiTelegramException:
+            selected_text += f"✅ <code>{user_id}</code> (ошибка получения данных)\n"
 
     keyboard = InlineKeyboardMarkup()
     keyboard.add(
