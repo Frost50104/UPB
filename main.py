@@ -530,21 +530,35 @@ def delete_employee(call):
 @bot.message_handler(commands=['set_tasks_group'])
 def handle_set_tasks_group(message):
     """Позволяет администратору изменить задания для групп."""
-    if not is_admin(message.from_user.id):
+    if message.from_user.id not in config.ADMIN_ID:
         bot.send_message(message.chat.id, "⛔ У вас нет прав изменять задания групп.")
         return
 
     importlib.reload(config)  # Обновляем данные
 
-    # Формируем список групп с текущими заданиями
-    response = "<b>Текущие задания групп:</b>\n\n"
-    keyboard = InlineKeyboardMarkup()
+    global task_data
+    task_data = {}  # Создаем глобальный словарь для хранения выбранной группы
 
-    for group_name, group_users in config.performers.items():
-        task_text = config.control_panel.get(group_users, "❌ Нет задания")
-        response += f"🔹 <b>{group_name}:</b>\n<pre>{task_text.strip()}</pre>\n\n"
-        callback_data = f"edit_task|{message.chat.id}|{group_name}"
-        keyboard.add(InlineKeyboardButton(group_name, callback_data=callback_data))
+    keyboard = InlineKeyboardMarkup()
+    global group_name_map
+    group_name_map = {}
+
+    response = "<b>Текущие задания групп:</b>\n\n"
+
+    for group_name, performers_list in config.performers.items():
+        # Преобразуем название списка исполнителей в строку, чтобы соответствовать ключам в control_panel_for_set_tasks_group
+        performers_key = f"performers_list_{list(config.performers.keys()).index(group_name) + 1}"
+        correct_task = config.control_panel_for_set_tasks_group.get(performers_key, "❌ Нет задания")
+
+        response += f"🔹 <b>{group_name}:</b>\n<pre>{correct_task.strip()}</pre>\n\n"
+
+        group_hash = hashlib.md5(group_name.encode()).hexdigest()[:8]
+        group_name_map[group_hash] = group_name  # Сохраняем соответствие
+
+        callback_data = f"edit_task|{message.chat.id}|{group_hash}"
+        keyboard.add(InlineKeyboardButton(group_name[:30], callback_data=callback_data))
+
+    keyboard.add(InlineKeyboardButton("❌ Отмена", callback_data=f"cancel_set_tasks_group|{message.chat.id}"))
 
     bot.send_message(
         message.chat.id,
@@ -553,26 +567,35 @@ def handle_set_tasks_group(message):
         reply_markup=keyboard
     )
 
-
 @bot.callback_query_handler(func=lambda call: call.data.startswith("edit_task"))
 def edit_task(call):
     """Запрашивает у администратора новое задание для выбранной группы."""
-    _, chat_id, group_name = call.data.split("|")
+    _, chat_id, group_hash = call.data.split("|")
     chat_id = int(chat_id)
 
-    if chat_id not in task_data:
-        task_data[chat_id] = {}
+    if group_hash not in group_name_map:
+        bot.answer_callback_query(call.id, "⚠ Ошибка: группа не найдена.")
+        return
 
-    task_data[chat_id]["selected_group"] = group_name
+    group_name = group_name_map[group_hash]
+
+    task_data[chat_id] = {"selected_group": group_name}
 
     bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
 
     bot.send_message(chat_id, f"Введите новое задание для группы <b>{group_name}</b>:", parse_mode="HTML")
     bot.register_next_step_handler_by_chat_id(chat_id, update_task_text)
 
+@bot.callback_query_handler(func=lambda call: call.data.startswith("cancel_set_tasks_group"))
+def cancel_set_tasks_group(call):
+    """Отмена изменения заданий для групп."""
+    chat_id = int(call.data.split("|")[1])
+
+    bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
+    bot.send_message(chat_id, "🚫 Изменение задач для автоматической отправки отменено.")
 
 def update_task_text(message):
-    """Обновляет задание для выбранной группы в config.py, не изменяя другие данные."""
+    """Обновляет задание для выбранной группы в config.py и сохраняет его в control_panel_for_set_tasks_group."""
     chat_id = message.chat.id
 
     if chat_id not in task_data or "selected_group" not in task_data[chat_id]:
@@ -586,42 +609,44 @@ def update_task_text(message):
     with open(config_file, "r", encoding="utf-8") as file:
         config_content = file.readlines()
 
-    # Определяем переменную задания, например: task_group_1, task_group_2 и т. д.
+    # Определяем переменную задания
     group_index = list(config.performers.keys()).index(group_name) + 1
     task_var_name = f"task_group_{group_index}"
+    performers_key = f"performers_list_{group_index}"
 
     # Обновленный список строк конфигурации
     new_config_content = []
     inside_task_block = False
-    task_updated = False  # Флаг, чтобы обновить только один раз
+    task_updated = False
 
     for line in config_content:
-        if line.strip().startswith(f"{task_var_name} = "):  # Нашли начало задания
+        if line.strip().startswith(f"{task_var_name} = '''") or line.strip().startswith(f'{task_var_name} = """'):
+            # Найден старый блок задачи — заменяем его
+            new_config_content.append(f"{task_var_name} = '''\n{new_task_text}\n'''\n")
             inside_task_block = True
-            new_config_content.append(f"{task_var_name} = '''\n{new_task_text}\n'''\n")  # Заменяем задание
             task_updated = True
-            continue  # Пропускаем старые строки с текстом задания
+            continue
 
         if inside_task_block:
-            if "'''" in line or '"""' in line:  # Конец блока задания
-                inside_task_block = False
-            continue  # Пропускаем старые строки с текстом задания
+            if line.strip().endswith("'''") or line.strip().endswith('"""'):
+                inside_task_block = False  # Конец старого блока задачи
+            continue  # Не записываем старые строки задачи
 
-        new_config_content.append(line)  # Добавляем все остальные строки без изменений
+        new_config_content.append(line)  # Оставляем все остальные строки без изменений
 
     if not task_updated:
         bot.send_message(chat_id, f"⚠ Ошибка: переменная {task_var_name} не найдена в config.py")
         return
 
-    # Записываем обновленный config.py
+    # Записываем исправленный config.py
     with open(config_file, "w", encoding="utf-8") as file:
         file.writelines(new_config_content)
 
     # Перезагружаем config.py, чтобы бот сразу видел изменения
     importlib.reload(config)
 
-    # Обновляем `control_panel`
-    config.control_panel[config.performers[group_name]] = new_task_text
+    # Обновляем `control_panel_for_set_tasks_group`
+    config.control_panel_for_set_tasks_group[performers_key] = new_task_text
 
     bot.send_message(
         chat_id,
