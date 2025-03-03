@@ -652,6 +652,12 @@ def process_group_task_text(message):
     send_group_selection(chat_id)
 
 
+def hash_group_name(group_name):
+    """Создаёт короткий хеш названия группы для использования в callback_data."""
+    return hashlib.md5(group_name.encode()).hexdigest()[:8]  # 8 символов достаточно для уникальности
+
+group_name_map = {}  # Словарь для хранения соответствия хеша и оригинального названия
+
 def send_group_selection(chat_id):
     """Отправляет список групп для выбора."""
     importlib.reload(config)  # Обновляем данные
@@ -661,7 +667,6 @@ def send_group_selection(chat_id):
 
     keyboard = InlineKeyboardMarkup()
 
-    # Если нет доступных групп, сразу переходим к шагу подтверждения отправки
     if not available_groups:
         bot.send_message(
             chat_id,
@@ -672,7 +677,9 @@ def send_group_selection(chat_id):
         return
 
     for group_name in available_groups:
-        callback_data = f"group_task_select|{chat_id}|{group_name}"  # Уникальный префикс
+        group_hash = hash_group_name(group_name)
+        group_name_map[group_hash] = group_name  # Сохраняем соответствие
+        callback_data = f"group_task_select|{chat_id}|{group_hash}"
         keyboard.add(InlineKeyboardButton(group_name, callback_data=callback_data))
 
     keyboard.add(InlineKeyboardButton("❌ Отмена", callback_data=f"group_task_cancel|{chat_id}"))
@@ -684,22 +691,25 @@ def send_group_selection(chat_id):
         reply_markup=keyboard
     )
 
-
 @bot.callback_query_handler(func=lambda call: call.data.startswith("group_task_select"))
 def select_group(call):
     """Добавляет группу в список получателей задачи и предлагает выбрать еще или отправить."""
-    _, chat_id, group_name = call.data.split("|")
+    _, chat_id, group_hash = call.data.split("|")
     chat_id = int(chat_id)
 
     if chat_id not in task_data:
         bot.answer_callback_query(call.id, "⚠ Ошибка: задача не найдена.")
         return
 
+    group_name = group_name_map.get(group_hash)
+    if not group_name:
+        bot.answer_callback_query(call.id, "⚠ Ошибка: группа не найдена.")
+        return
+
     if group_name not in task_data[chat_id]["selected_groups"]:
         task_data[chat_id]["selected_groups"].append(group_name)
 
     bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
-
     send_selected_groups(chat_id)
 
 
