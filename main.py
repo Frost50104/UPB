@@ -434,11 +434,37 @@ def select_group_to_delete(call):
 
         keyboard.add(InlineKeyboardButton(display_text, callback_data=f"delete_user_{user_id}"))
 
+    # Добавляем кнопку "❌ Отмена"
+    keyboard.add(InlineKeyboardButton("❌ Отмена", callback_data="cancel_delete_employee"))
+
     bot.edit_message_text(
         f"Выберите сотрудника для удаления из <b>{group_name}</b>:",
         chat_id,
         call.message.message_id,
         parse_mode="HTML",
+        reply_markup=keyboard
+    )
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "cancel_delete_employee")
+def cancel_delete_employee(call):
+    """Возвращает пользователя к выбору группы."""
+    chat_id = call.message.chat.id
+
+    if chat_id not in task_data or "group_index_map" not in task_data[chat_id]:
+        bot.send_message(chat_id, "⚠ Ошибка: данные не найдены. Повторите команду /delete_user.")
+        return
+
+    group_index_map = task_data[chat_id]["group_index_map"]
+
+    keyboard = InlineKeyboardMarkup()
+    for index, group_name in group_index_map.items():
+        keyboard.add(InlineKeyboardButton(group_name[:30], callback_data=f"delete_group_{index}"))
+
+    bot.edit_message_text(
+        "Выберите группу, из которой нужно удалить сотрудника:",
+        chat_id,
+        call.message.message_id,
         reply_markup=keyboard
     )
 
@@ -499,7 +525,6 @@ def delete_employee(call):
             existing_ids_list.remove(user_id)
             updated_ids = ", ".join(map(str, existing_ids_list))
 
-            # Если после удаления группа пуста, оставляем ее пустой
             new_config_content.append(f"{group_var_name} = ({updated_ids},)\n" if updated_ids else f"{group_var_name} = ()\n")
 
             group_updated = True
@@ -514,7 +539,6 @@ def delete_employee(call):
     with open(config_file, "w", encoding="utf-8") as file:
         file.writelines(new_config_content)
 
-    # Перезагружаем config.py
     importlib.reload(config)
 
     bot.send_message(
@@ -523,7 +547,6 @@ def delete_employee(call):
         parse_mode="HTML"
     )
 
-    # Очищаем временные данные
     del task_data[chat_id]
 
 
