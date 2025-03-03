@@ -1417,6 +1417,11 @@ def handle_command_help(message: types.Message):
 
 @bot.message_handler(commands=['admins'])
 def handle_command_admins(message: types.Message):
+
+    if not is_admin(message.from_user.id):
+        bot.send_message(message.chat.id, "⛔ У вас нет прав просматривать список администраторов.")
+        return
+
     """Выводит список администраторов бота."""
     admin_list = []
 
@@ -1439,6 +1444,12 @@ def handle_command_admins(message: types.Message):
 
 @bot.message_handler(commands=['bot_users'])
 def handle_bot_users(message):
+
+    if not is_admin(message.from_user.id):
+        bot.send_message(message.chat.id, "⛔ У вас нет прав просматривать список пользователей.")
+        return
+
+
     """Выводит актуальный список сотрудников по группам."""
 
     importlib.reload(config)  # Перезагружаем config.py
