@@ -55,6 +55,12 @@ def handle_set_group_name(message):
 # Словарь для хранения соответствия индексов и имен групп
 group_index_map = {str(index): name for index, name in enumerate(config.performers.keys())}
 
+@bot.callback_query_handler(func=lambda call: call.data == "cancel_set_group_name")
+def cancel_set_group_name(call):
+    """Обрабатывает отказ от изменения названия группы."""
+    bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
+    bot.send_message(call.message.chat.id, "🚫 Смена названия группы отменена.")
+
 @bot.callback_query_handler(func=lambda call: call.data == "confirm_set_group_name")
 def process_set_group_name_choice(call):
     """Обрабатывает выбор администратора (изменять название или нет)."""
